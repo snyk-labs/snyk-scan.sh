@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# this script requires bash 4+, GNU egrep, and snyk CLI 
+# this script requires the snyk CLI 
 #
 # recurse through directory structure and snyk scan each 
 # project for a given list of file types
@@ -21,12 +21,12 @@ finalExitCode=0
 numExitCodes=(0 0 0)
 
 # mapping of manifest files to project type
-projectTypes_javascript="package.json|yarn.lock"
+projectTypes_javascript="package-lock.json|yarn.lock"
 projectTypes_python="requirements.txt|pyproject.toml"
 projectTypes_java_maven="pom.xml"
 projectTypes_java_gradle="build.gradle"
 projectTypes_dotnet=".sln|.csproj|packages.config|project.json|paket.dependencies|project.assets.json"
-projectTypes_ruby="gemfile.lock"
+projectTypes_ruby="Gemfile.lock"
 projectTypes_golang="go.mod|vendor/vendor.json|Gopkg.lock"
 projectTypes_cocoapods="Podfile"
 projectTypes_scala="build.sbt"
