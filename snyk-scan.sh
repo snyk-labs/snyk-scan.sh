@@ -18,7 +18,6 @@ projectType=$2
 finalExitCode=0
 
 # track the number of projects that resulted in a specific exit code
-#declare -a numExitCodes
 numExitCodes=(0 0 0)
 
 # mapping of manifest files to project type
