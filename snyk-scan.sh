@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# this script requires bash 4+, GNU egrep, and snyk CLI 
+# this script requires the snyk CLI 
 #
 # recurse through directory structure and snyk scan each 
 # project for a given list of file types
@@ -18,23 +18,19 @@ projectType=$2
 finalExitCode=0
 
 # track the number of projects that resulted in a specific exit code
-declare -A numExitCodes
-numExitCodes[0]=0
-numExitCodes[1]=0
-numExitCodes[2]=0
+numExitCodes=(0 0 0)
 
 # mapping of manifest files to project type
-declare -A projectTypes
-projectTypes['javascript']="package\.json|yarn\.lock"
-projectTypes['python']="requirements\.txt|pyproject\.toml"
-projectTypes['java_maven']="pom\.xml"
-projectTypes['java_gradle']="build\.gradle"
-projectTypes['dotnet']="\.sln|\.csproj|packages\.config|project\.json|paket\.dependencies|project\.assets\.json"
-projectTypes['ruby']="gemfile\.lock"
-projectTypes['golang']="go\.mod|vendor/vendor\.json|Gopkg\.lock"
-projectTypes['cocoapods']="Podfile"
-projectTypes['scala']="build\.sbt"
-projectTypes['php']="composer\.lock"
+projectTypes_javascript="package-lock.json|yarn.lock"
+projectTypes_python="requirements.txt|pyproject.toml"
+projectTypes_java_maven="pom.xml"
+projectTypes_java_gradle="build.gradle"
+projectTypes_dotnet=".sln|.csproj|packages.config|project.json|paket.dependencies|project.assets.json"
+projectTypes_ruby="Gemfile.lock"
+projectTypes_golang="go.mod|vendor/vendor.json|Gopkg.lock"
+projectTypes_cocoapods="Podfile"
+projectTypes_scala="build.sbt"
+projectTypes_php="composer.lock"
 
 echo "scanMode set to: ${scanMode}"
 echo "projectType set to: ${projectType}"
@@ -52,10 +48,27 @@ snyk_scan(){
     return $?
 }
 
+snyk_gen_file_list(){
+    file_array=($(echo $1 | tr '|' ' '))
+
+    unset file_string
+
+    for fname in ${file_array[@]}; do
+        if [ -n "${file_string+set}" ]; then
+            # we append a -o since this is the second file
+            file_string+=" -o"
+        fi
+        file_string+=" -name *${fname}"
+    done
+
+    echo "$file_string"
+}
+
 snyk_scan_by_type(){
-    echo "will look for files matching: ${projectTypes[$1]}"
+    echo "will look for files matching: ${!1}"
     echo ""
-    for manifest in $(find . -name "*" | egrep "${projectTypes[$1]}"); do 
+    search_string=$(snyk_gen_file_list ${!1})
+    for manifest in $(find . -type f \( $search_string \) -not -path '*/\.*'); do 
         snyk_scan $manifest; currentExitCode=$?
         if [[ $currentExitCode -gt $finalExitCode ]]; then
           finalExitCode=$currentExitCode
@@ -66,12 +79,16 @@ snyk_scan_by_type(){
 
 # unless projectType is 'all' process the specific types of projects
 if [[ "${projectType}" != "all" ]]; then
-    snyk_scan_by_type $projectType
+    pt="projectTypes_${projectType}"
+    snyk_scan_by_type $pt
 else # iterate through all known project types
     echo "will look for all known project types"
     echo ""
-    for pt in "${!projectTypes[@]}"; do
-        echo "checking for ${pt} manifests matching: ${projectTypes[$pt]}"
+    # ${!projectTypes_*} expands to all our variables that start with projectType_
+    for pt in ${!projectTypes_*}; do
+        # ${pt#*_} chomps projectTypes_, giving us java, etc
+        # ${!pt} takes the string "projectTypes_java" and uses it as a variable name instead
+        echo "checking for ${pt#*_} manifests matching: ${!pt}"
         snyk_scan_by_type $pt
     done
 fi
