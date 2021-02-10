@@ -65,8 +65,8 @@ snyk_gen_file_list(){
 }
 
 snyk_scan_by_type(){
-    echo "will look for files matching: ${!1}"
-    echo ""
+    #echo "will look for files matching: ${!1}"
+    #echo ""
     search_string=$(snyk_gen_file_list ${!1})
     for manifest in $(find . -type f \( $search_string \) -not -path '*/\.*'); do 
         snyk_scan $manifest; currentExitCode=$?
