@@ -5,13 +5,15 @@
 # recurse through directory structure and snyk scan each 
 # project for a given list of file types
 #
-# mode= -> scanMode: one of [monitor, test]
-# type= -> projectType: one of [
+# --mode= -> scanMode: one of [monitor, test]
+# --type= -> projectType: one of [
 #   javascript, python, java_maven, java_gradle, 
 #   dotnet, ruby, golang, cocoapods, scala, php, all
 # ]
 # all is a special case that will iterate through each type
-
+# --version= -> versionString: this can be used to enable tracking multiple
+#   versions of an app.  This will be appended to all project names
+#   and the project group.
 # logic taken from https://unix.stackexchange.com/a/580258
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -22,6 +24,10 @@ while [ $# -gt 0 ]; do
     --type*)
       if [[ "$1" != *=* ]]; then shift; fi
       projectType="${1#*=}"
+      ;;
+    --version*)
+      if [[ "$1" != *=* ]]; then shift; fi
+      versionString="${1#*=}"
       ;;
     --help|-h)
       printf "Meaningful help message" # Flag argument
@@ -58,13 +64,21 @@ echo "scanMode set to: ${scanMode}"
 echo "projectType set to: ${projectType}"
 
 # snyk monitor snapshots will be stored under this grouping
-projectGroup=$(basename `pwd`)
+if [ -n "$versionString" ]; then
+    projectGroup="$(basename `pwd`)-${versionString}"
+else
+    projectGroup=$(basename `pwd`)
+fi
 
 echo "projectGroup set to: ${projectGroup}"
 
 snyk_scan(){
     echo "testing manifest: ${1}"
-    projectName="${1:2}"
+    if [ -n "$versionString" ]; then
+        projectName="${1:2}-${versionString}"
+    else
+        projectName="${1:2}"
+    fi
     echo "project name: ${projectName}"
     snyk $scanMode --file="${1}" --project-name="${projectName}" --remote-repo-url="${projectGroup}"
     return $?
