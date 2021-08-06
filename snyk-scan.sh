@@ -5,14 +5,36 @@
 # recurse through directory structure and snyk scan each 
 # project for a given list of file types
 #
-# $1 -> scanMode: one of [monitor, test]
-# $2 -> projectType: one of [
+# mode= -> scanMode: one of [monitor, test]
+# type= -> projectType: one of [
 #   javascript, python, java_maven, java_gradle, 
 #   dotnet, ruby, golang, cocoapods, scala, php, all
 # ]
 # all is a special case that will iterate through each type
-scanMode=$1
-projectType=$2
+
+# logic taken from https://unix.stackexchange.com/a/580258
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --mode*)
+      if [[ "$1" != *=* ]]; then shift; fi # Value is next arg if no `=`
+      scanMode="${1#*=}"
+      ;;
+    --type*)
+      if [[ "$1" != *=* ]]; then shift; fi
+      projectType="${1#*=}"
+      ;;
+    --help|-h)
+      printf "Meaningful help message" # Flag argument
+      exit 0
+      ;;
+    *)
+      >&2 printf "Error: Invalid argument\n"
+      exit 1
+      ;;
+  esac
+  shift
+done
+
 
 # set default exitCode for the entire set of scans
 finalExitCode=0
