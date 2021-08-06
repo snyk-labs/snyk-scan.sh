@@ -11,9 +11,22 @@
 #   dotnet, ruby, golang, cocoapods, scala, php, all
 # ]
 # all is a special case that will iterate through each type
+#
 # --version= -> versionString: this can be used to enable tracking multiple
 #   versions of an app.  This will be appended to all project names
 #   and the project group.
+# --args= -> extraArgs: this is snyk CLI arguments which will be applied on 
+#   every test/monitor command.  Don't use --project-name or --remote-repo-url
+#   or --all-projects or --exclude
+#
+# --html= -> htmlReport: this indicates if snyk-to-html should be used to 
+#   generate local html reports.  Only works with 'test'.
+#   Any --args will be discareded.
+#   Snyk-to-html must be installed: https://github.com/snyk/snyk-to-html
+
+htmlReport=0
+rootDir="$(pwd)"
+
 # logic taken from https://unix.stackexchange.com/a/580258
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -28,6 +41,14 @@ while [ $# -gt 0 ]; do
     --version*)
       if [[ "$1" != *=* ]]; then shift; fi
       versionString="${1#*=}"
+      ;;
+    --args*)
+      if [[ "$1" != *=* ]]; then shift; fi
+      extraArgs="${1#*=}"
+      ;;
+    --html*)
+      if [[ "$1" != *=* ]]; then shift; fi
+      htmlReport="${1#*=}"
       ;;
     --help|-h)
       printf "Meaningful help message" # Flag argument
@@ -62,9 +83,10 @@ projectTypes_php="composer.lock"
 
 echo "scanMode set to: ${scanMode}"
 echo "projectType set to: ${projectType}"
+echo "using extraArgs: ${extraArgs}"
 
 # snyk monitor snapshots will be stored under this grouping
-if [ -n "$versionString" ]; then
+if [[ -n "$versionString" ]]; then
     projectGroup="$(basename `pwd`)-${versionString}"
 else
     projectGroup=$(basename `pwd`)
@@ -74,13 +96,19 @@ echo "projectGroup set to: ${projectGroup}"
 
 snyk_scan(){
     echo "testing manifest: ${1}"
-    if [ -n "$versionString" ]; then
+    if [[ -n "$versionString" ]]; then
         projectName="${1:2}-${versionString}"
     else
         projectName="${1:2}"
     fi
     echo "project name: ${projectName}"
-    snyk $scanMode --file="${1}" --project-name="${projectName}" --remote-repo-url="${projectGroup}"
+    if [[ "$htmlReport" == "1" ]]; then
+        file_name="${rootDir}/$(echo $projectName | tr '/' '_').html"
+        echo "${file_name}"
+        snyk test --file="${1}" --json | snyk-to-html -o "${file_name}"
+    else
+        snyk $scanMode --file="${1}" --project-name="${projectName}" --remote-repo-url="${projectGroup}" "$extraArgs"
+    fi
     return $?
 }
 
@@ -130,8 +158,10 @@ else # iterate through all known project types
 fi
 
 echo ""
-
-if [[ "${scanMode}" == "test" ]]; then
+if [[ "$htmlReport" == "1" ]]; then
+    echo "Completed generating reports"
+    echo " - (2) Error: ${numExitCodes[2]}"
+elif [[ "${scanMode}" == "test" ]]; then
     echo "Project Test Summary by Exit Code:"
     echo " - (0) No Vulns: ${numExitCodes[0]}"
     echo " - (1) Vulns: ${numExitCodes[1]}"
