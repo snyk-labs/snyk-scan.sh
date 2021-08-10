@@ -51,11 +51,27 @@ while [ $# -gt 0 ]; do
       htmlReport="${1#*=}"
       ;;
     --help|-h)
-      printf "Meaningful help message" # Flag argument
+      echo ""
+      echo "This is a prototype script to help use the Snyk CLI for monorepos."
+      echo ""
+      echo "--mode allows you to choose between test or monitor."
+      echo "--type allows you to choose the language/package manager to look for:"
+      echo "    snyk-scan.sh --mode=test --type=java_gradle"
+      echo "    snyk-scan.sh --mode=monitor --type=all"
+      echo ""
+      echo "--version allows you to specify a version string if you want to track"
+      echo "  multiple versions of the same monorepo:"
+      echo "    snyk-scan.sh --mode=test --type=java_gradle --version=1.2.3"
+      echo ""
+      echo "--html will do a test and provide local html reports."
+      echo "  You must already have https://github.com/snyk/snyk-to-html available:"
+      echo "    snyk-scan.sh --html=1 --type=all"
+      echo ""
       exit 0
       ;;
     *)
-      >&2 printf "Error: Invalid argument\n"
+      >&2 echo "Error: Invalid argument"
+      >&2 echo ""
       exit 1
       ;;
   esac
