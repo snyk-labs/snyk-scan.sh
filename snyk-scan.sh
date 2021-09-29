@@ -25,7 +25,8 @@
 #   Snyk-to-html must be installed: https://github.com/snyk/snyk-to-html
 
 htmlReport=0
-rootDir="$(pwd)"
+dir="$(pwd)"
+rootDir="$(realpath ${dir})"
 
 # logic taken from https://unix.stackexchange.com/a/580258
 while [ $# -gt 0 ]; do
@@ -87,7 +88,7 @@ numExitCodes=(0 0 0)
 
 # mapping of manifest files to project type
 projectTypes_javascript="package-lock.json|yarn.lock"
-projectTypes_python="requirements.txt|pyproject.toml"
+projectTypes_python="requirements.txt|poetry.lock"
 projectTypes_java_maven="pom.xml"
 projectTypes_java_gradle="build.gradle"
 projectTypes_dotnet=".sln|.csproj|packages.config|project.json|paket.dependencies|project.assets.json"
@@ -122,8 +123,10 @@ snyk_scan(){
         file_name="${rootDir}/$(echo $projectName | tr '/' '_').html"
         echo "${file_name}"
         snyk test --file="${1}" --json | snyk-to-html -o "${file_name}"
+    elif [[ $# -eq 2 ]]; then
+      snyk $scanMode --file="${1}" --project-name="${projectGroup}/${projectName}" ${2} --remote-repo-url="${projectGroup}" "$extraArgs"
     else
-        snyk $scanMode --file="${1}" --project-name="${projectName}" --remote-repo-url="${projectGroup}" "$extraArgs"
+      snyk $scanMode --file="${1}" --project-name="${projectGroup}/${projectName}" --remote-repo-url="${projectGroup}" "$extraArgs"
     fi
     return $?
 }
@@ -148,13 +151,24 @@ snyk_scan_by_type(){
     #echo "will look for files matching: ${!1}"
     #echo ""
     search_string=$(snyk_gen_file_list ${!1})
-    for manifest in $(find . -type f \( $search_string \) -not -path '*/\.*'); do 
-        snyk_scan $manifest; currentExitCode=$?
-        if [[ $currentExitCode -gt $finalExitCode ]]; then
-          finalExitCode=$currentExitCode
+    for manifest in $(find . -type f \( $search_string \) -not -path '*/\.*'); do
+        echo "manifest name: "${manifest}
+        #Checks for requirements.txt files and sends snyk_scan an additional args to successfully scan
+        if [[ $manifest == *"requirements"* ]]; then
+            echo "Python requirements found.  Adding package manager to snyk test/monitor."
+            snyk_scan $manifest --package-manager=pip; currentExitCode=$?
+            if [[ $currentExitCode -gt $finalExitCode ]]; then
+                finalExitCode=$currentExitCode
+                fi
+              ((numExitCodes[$currentExitCode]=numExitCodes[$currentExitCode]+1))
+        else
+            snyk_scan $manifest; currentExitCode=$?
+            if [[ $currentExitCode -gt $finalExitCode ]]; then
+              finalExitCode=$currentExitCode
+            fi
+            ((numExitCodes[$currentExitCode]=numExitCodes[$currentExitCode]+1))
         fi
-        ((numExitCodes[$currentExitCode]=numExitCodes[$currentExitCode]+1))
-    done 
+        done
 }
 
 # unless projectType is 'all' process the specific types of projects
