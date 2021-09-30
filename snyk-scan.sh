@@ -50,6 +50,20 @@ while [ $# -gt 0 ]; do
       if [[ "$1" != *=* ]]; then shift; fi
       htmlReport="${1#*=}"
       ;;
+    --delta*)
+      if [[ "$1" != *=* ]]; then shift; fi
+      snykDelta="${1#*=}"
+      scanMode='test'
+      ;;
+    --combine-json*)
+      if [[ "$1" != *=* ]]; then shift; fi
+      combineJson="${1#*=}"
+      scanMode='test'
+      ;;
+    --ignore*)
+      if [[ "$1" != *=* ]]; then shift; fi
+      snykExcludes="${1#*=}"
+      ;;
     --help|-h)
       echo ""
       echo "This is a prototype script to help use the Snyk CLI for monorepos."
@@ -66,6 +80,14 @@ while [ $# -gt 0 ]; do
       echo "--html will do a test and provide local html reports."
       echo "  You must already have https://github.com/snyk/snyk-to-html available:"
       echo "    snyk-scan.sh --html=1 --type=all"
+      echo ""
+      echo "--delta will do a test and pass results through snyk-delta."
+      echo "  You must already have https://github.com/snyk-tech-services/snyk-delta available:"
+      echo "    snyk-scan.sh --delta=1 --type=java_maven"
+      echo ""
+      echo "--combine-json will combine all the test output (snyk test is implied)."
+      echo "  You must have jq available:"
+      echo "    snyk-scan.sh --combine-json --type=java_maven"
       echo ""
       exit 0
       ;;
@@ -84,6 +106,14 @@ finalExitCode=0
 
 # track the number of projects that resulted in a specific exit code
 numExitCodes=(0 0 0)
+
+# create a manifestsVulns to store the paths to the manifests with issues
+
+declare -gxa manifestsVulns
+
+# create a manifestsErrors to store paths of manifests with errors
+
+declare -gxa manifestsErrors
 
 # mapping of manifest files to project type
 projectTypes_javascript="package-lock.json|yarn.lock"
@@ -121,7 +151,9 @@ snyk_scan(){
     if [[ "$htmlReport" == "1" ]]; then
         file_name="${rootDir}/$(echo $projectName | tr '/' '_').html"
         echo "${file_name}"
-        snyk test --file="${1}" --json | snyk-to-html -o "${file_name}"
+        snyk test --file="${1}" --json "$extraArgs" | snyk-to-html -o "${file_name}"
+    elif [[ "$snykDelta" == "1" ]]; then
+        snyk test --file="${1}" --json --print-deps "$extraArgs" | snyk-delta
     else
         snyk $scanMode --file="${1}" --project-name="${projectName}" --remote-repo-url="${projectGroup}" "$extraArgs"
     fi
@@ -144,18 +176,95 @@ snyk_gen_file_list(){
     echo "$file_string"
 }
 
+snyk_gen_exclude_list(){
+    exlude_array=($(echo $1 | tr ',' ' '))
+
+    snyk_excludes=' ! -path */\.* ! -path */node_modules/* ! -path */vendor/* ! -path */submodules/*' 
+
+    for fname in "${exlude_array[@]}"; do
+        if [ -n "${snyk_excludes+set}" ]; then
+            # we append a -o since this is the second file
+            snyk_excludes+=" -o"
+        fi
+        snyk_excludes+=" ! -path */${fname}/*"
+    done
+
+    echo "$snyk_excludes"
+
+}
+
 snyk_scan_by_type(){
     #echo "will look for files matching: ${!1}"
     #echo ""
     search_string=$(snyk_gen_file_list ${!1})
-    for manifest in $(find . -type f \( $search_string \) -not -path '*/\.*'); do 
+    excludes_string=$(snyk_gen_exclude_list ${snykExcludes})
+    set -o noglob
+    readarray -t manifests < <(find . -type f \( $search_string \) \( $excludes_string \) )
+    set +o noglob
+    for manifest in "${manifests[@]}"; do 
         snyk_scan $manifest; currentExitCode=$?
         if [[ $currentExitCode -gt $finalExitCode ]]; then
           finalExitCode=$currentExitCode
         fi
         ((numExitCodes[$currentExitCode]=numExitCodes[$currentExitCode]+1))
+        if [ $currentExitCode = 1 ]; then
+            manifestsVulns+=("${manifest}")
+        elif [ $currentExitCode = 2 ]; then
+            manifestsErrors+=("${manifest}")
+        fi
     done 
 }
+
+print_manifests_with_vulns(){
+    if [[ $1 -gt 0 ]]; then
+        for vulnFile in "${manifestsVulns[@]}"; do
+            echo " - File: ${vulnFile}"
+        done
+    fi
+}
+
+print_manifests_with_errors(){
+    if [[ $1 -gt 0 ]]; then
+        for errorFile in "${manifestsErrors[@]}"; do
+            echo " - File: ${errorFile}"
+        done
+    fi
+}
+
+
+# check for snyk
+if ! command -v snyk &> /dev/null ; then
+    echo "snyk is not installed or in your \$PATH"
+    exit 2
+fi
+
+# check for snyk-to-html if using --html
+if [[ "$htmlReport" == "1" ]]; then
+    if ! command -v snyk-to-html &> /dev/null ; then
+        echo "snyk-to-html is not installed or in \$PATH"
+        echo "--html is not available"
+        exit 2
+    fi
+fi
+
+# check for snyk-delta if using --delta
+if [[ "$snykDelta" == "1" ]]; then
+    if ! command -v snyk-delta &> /dev/null ; then
+        echo "snyk-delta is not installed or in \$PATH"
+        echo "--delta is not available"
+        exit 2
+    fi
+fi
+
+# check for jq if using --combine-json
+if [[ "$combineJson" == "1" ]]; then
+    if ! command -v jq &> /dev/null ; then
+        echo "jq is not installed or in \$PATH"
+        echo "--combine-json is not available"
+        exit 2
+    fi
+fi
+
 
 # unless projectType is 'all' process the specific types of projects
 if [[ "${projectType}" != "all" ]]; then
@@ -181,12 +290,16 @@ elif [[ "${scanMode}" == "test" ]]; then
     echo "Project Test Summary by Exit Code:"
     echo " - (0) No Vulns: ${numExitCodes[0]}"
     echo " - (1) Vulns: ${numExitCodes[1]}"
+    print_manifests_with_vulns "${numExitCodes[1]}"
     echo " - (2) Scanning Error: ${numExitCodes[2]}"
+    print_manifests_with_errors "${numExitCodes[2]}"
 elif [[ "${scanMode}" == "monitor" ]]; then
     echo "Project Monitor Summary by Exit Code:"
     echo " - (0) Success: ${numExitCodes[0]}"
     echo " - (1) Error: ${numExitCodes[1]}"
+    print_manifests_with_vulns "${numExitCodes[1]}"
     echo " - (2) Scanning Error: ${numExitCodes[2]}"
+    print_manifests_with_errors "${numExitCodes[2]}"
 fi
 
 echo ""
