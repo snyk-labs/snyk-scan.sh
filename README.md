@@ -1,3 +1,5 @@
+![snyk-oss-category](https://github.com/snyk-labs/oss-images/blob/main/oss-example.jpg)
+
 # snyk-scan.sh
 prototype monorepo utility wrapper for Snyk CLI
 ###  Basic Examples
